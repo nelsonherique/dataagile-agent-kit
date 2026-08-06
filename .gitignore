@@ -58,6 +58,12 @@ docs/plans/material_treinamento/*.pdf
 # Repo metadata
 !/.claude-plugin/
 !/README.md
+!/FLUXO-DE-TRABALHO.md
+!/tests/
+# /scripts/ ficou de fora da whitelist e o sync-sonar-rules.cjs NUNCA foi versionado:
+# existia só na máquina do dev, então a suíte passava aqui e explodia no CI
+# ("Cannot find module"). Mesma armadilha que já tinha engolido /tests/ em silêncio.
+!/scripts/
 !/CHANGELOG.md
 !/ONBOARDING.md
 !/LICENSE
@@ -69,3 +75,8 @@ docs/plans/material_treinamento/*.pdf
 !/installer/
 !/RELEASING.md
 !/.github/
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+.beads-credential-key
+.beads/proxieddb/

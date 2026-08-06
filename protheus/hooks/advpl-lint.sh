@@ -1,6 +1,14 @@
 #!/usr/bin/env bash
 # advpl-lint.sh — Lint ADVPL/TLPP via advpls appre
 # Lê o input do hook via stdin (JSON do Claude Code)
+#
+# ESCOPO (validado com binário real TDS-LS 2.0 rev 46759): o appre cobre
+# PRÉ-PROCESSAMENTO (includes/defines) e, quando o binário emite o JSON de
+# msgs, sintaxe/avisos. Versões do TDS-LS que retornam vazio em sucesso não
+# emitem diagnóstico semântico aqui — a validação PLENA (variável não usada,
+# undefined, C####) acontece na COMPILAÇÃO (deploy/PROBAT), que é gate do
+# pipeline. Este hook nunca trava (timeout 45s) e nunca finge sucesso quando
+# o appre falha (aviso com orientação de PROTHEUS_INCLUDES).
 
 INPUT=$(cat)
 FILE=$(echo "$INPUT" | jq -r '.tool_input.file_path // .tool_input.path // ""' 2>/dev/null)
@@ -11,7 +19,10 @@ FILE=$(echo "$INPUT" | jq -r '.tool_input.file_path // .tool_input.path // ""' 2
 
 # Localizar advpls: PATH global, npm global, ou local no projeto
 find_advpls() {
-  if command -v advpls &>/dev/null; then echo "advpls"; return; fi
+  # command -v devolve o caminho absoluto — necessário porque o chamador valida
+  # com [[ -x ]], que sobre um nome puro testaria um arquivo no CWD (bug real:
+  # com advpls no PATH o hook saía com "não encontrado" e o gate virava no-op)
+  if command -v advpls &>/dev/null; then command -v advpls; return; fi
   local bin
   bin=$(node -e "try{console.log(require('@totvs/tds-ls'))}catch(e){}" 2>/dev/null)
   [[ -n "$bin" && -x "$bin" ]] && echo "$bin" && return
@@ -44,7 +55,9 @@ while [[ "$_dir" != "/" ]]; do
       IFS=';,' read -ra _paths <<< "$_inc"
       for _p in "${_paths[@]}"; do
         _p=$(echo "$_p" | xargs)  # trim
-        [[ -n "$_p" ]] && INCLUDE_FLAGS+=(-I "$_p")
+        # absolutizar: o appre roda com cwd num dir temporário (ver bloco de execução),
+        # então include relativo ao projeto precisa virar caminho absoluto aqui
+        [[ -n "$_p" ]] && INCLUDE_FLAGS+=(-I "$(realpath -m "$_p" 2>/dev/null || echo "$_p")")
       done
     fi
     break
@@ -52,13 +65,45 @@ while [[ "$_dir" != "/" ]]; do
   _dir=$(dirname "$_dir")
 done
 
-RAW=$("$ADVPLS" appre "$FILE" "${INCLUDE_FLAGS[@]}" 2>/dev/null)
-[[ -z "$RAW" ]] && echo "✅ ADVPL LINT: $(basename "$FILE") ok" && exit 0
+# timeout interno: sem includes o appre pode TRAVAR (validado com binário real);
+# stderr capturado à parte — erro de pré-processamento não pode virar "ok" silencioso
+_ERR=$(mktemp)
+# appre grava arquivos de trabalho a cada execução (.ppo e .errprw ao lado da fonte,
+# console_error.log no cwd). Rodamos num dir descartável: -O reposiciona .ppo/.errprw e o
+# cwd no tmpdir faz o console_error.log cair lá também — nada suja o repo do projeto.
+# O hook só consome stdout/stderr; nunca lê esses arquivos, então descartá-los é seguro.
+_WORK=$(mktemp -d)
+_ABS_FILE=$(realpath "$FILE")
+if command -v timeout >/dev/null 2>&1; then
+  RAW=$(cd "$_WORK" && timeout 45 "$ADVPLS" appre "$_ABS_FILE" -O "$_WORK" "${INCLUDE_FLAGS[@]}" 2>"$_ERR")
+  _APPRE_RC=$?
+else
+  RAW=$(cd "$_WORK" && "$ADVPLS" appre "$_ABS_FILE" -O "$_WORK" "${INCLUDE_FLAGS[@]}" 2>"$_ERR")
+  _APPRE_RC=$?
+fi
+rm -rf "$_WORK"
+if [[ $_APPRE_RC -eq 124 ]]; then
+  echo "⚠️  ADVPL LINT: advpls appre excedeu 45s (provável falta de includes) — configure PROTHEUS_INCLUDES=<path> no CLAUDE.md do projeto"
+  rm -f "$_ERR"; exit 0
+fi
+if [[ -z "$RAW" ]]; then
+  if grep -qiE "ERR|error" "$_ERR" 2>/dev/null; then
+    echo "⚠️  ADVPL LINT: appre não conseguiu pré-processar $(basename "$FILE") — configure PROTHEUS_INCLUDES=<path> no CLAUDE.md do projeto. Detalhe:"
+    tail -2 "$_ERR" | tr -d '\033' | sed 's/\[[0-9;]*m//g' | head -2
+  else
+    echo "✅ ADVPL LINT: $(basename "$FILE") ok"
+  fi
+  rm -f "$_ERR"; exit 0
+fi
+rm -f "$_ERR"
 
-# Parsear JSON e categorizar mensagens
-node -e "
-const raw = \`$RAW\`.replace(/(\\r\\n|\\n|\\r)/gm, ' ');
-const file = '$FILE';
+# Parsear JSON e categorizar mensagens.
+# SEGURANÇA: RAW (saída do advpls, que ecoa trechos do fonte do usuário) e FILE
+# entram no Node via AMBIENTE — nunca interpolados no código JS. Interpolar
+# permitiria injeção de código por um fonte contendo ` ou ${...} (ou path com ').
+ADVPL_LINT_RAW="$RAW" ADVPL_LINT_FILE="$FILE" node -e "
+const raw = String(process.env.ADVPL_LINT_RAW || '').replace(/(\\r\\n|\\n|\\r)/gm, ' ');
+const file = String(process.env.ADVPL_LINT_FILE || '');
 const basename = file.split('/').pop();
 
 // Warnings que devem ser tratados como ERROS (bloqueantes)
@@ -91,7 +136,7 @@ try {
   const warnInfo = [];      // tipo != 0, apenas avisos
 
   // Formato da mensagem: 'arquivo.prw(linha) texto da mensagem'
-  const lineRe = /\\(\\d+\\)/;
+  const lineRe = /\\((\\d+)\\)/;
 
   for (const [msg, type] of Object.entries(msgs)) {
     const lineMatch = msg.match(lineRe);
@@ -140,7 +185,9 @@ try {
   if (totalIssues > 0) {
     lines.push('');
     lines.push('Corrija os problemas acima antes de compilar.');
-    console.log(lines.join('\n'));
+    // exit 2 (bloqueante): o Claude Code entrega o STDERR ao modelo — o
+    // relatório PRECISA ir para lá (em stdout o Claude era bloqueado às cegas)
+    console.error(lines.join('\n'));
     process.exit(2); // bloquear o Claude
   } else {
     console.log(lines.join('\n'));
@@ -153,4 +200,4 @@ try {
   console.log(raw.substring(0, 300));
   process.exit(0);
 }
-" 2>/dev/null
+"
