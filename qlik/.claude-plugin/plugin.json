@@ -1,0 +1,10 @@
+{
+  "name": "qlik",
+  "description": "Plugin Claude Code para consultar o Qlik Sense Cloud (tenant PrioriSA) via API REST. Expõe MCP server local com tools para buscar apps/sheets no catálogo, ler metadados de app, listar espaços e chamar qualquer endpoint REST do Qlik Cloud.",
+  "version": "1.0.0",
+  "author": {
+    "name": "DataAgile - Time de Desenvolvimento"
+  },
+  "homepage": "https://github.com/tbc-servicos/dataagile-agent-kit",
+  "repository": "https://github.com/tbc-servicos/dataagile-agent-kit"
+}

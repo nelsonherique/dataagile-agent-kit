@@ -61,6 +61,23 @@
       ]
     },
     {
+      "name": "qlik",
+      "source": "./qlik",
+      "description": "Plugin para consultar o Qlik Sense Cloud (tenant PrioriSA) via API REST — MCP local com tools para buscar apps/sheets no catálogo, ler metadados de app, listar espaços e chamar qualquer endpoint REST do Qlik Cloud.",
+      "version": "1.0.0",
+      "author": {
+        "name": "DataAgile"
+      },
+      "category": "development",
+      "tags": [
+        "qlik",
+        "qlik-sense",
+        "bi",
+        "analytics",
+        "api"
+      ]
+    },
+    {
       "name": "playwright",
       "source": "./playwright",
       "description": "Plugin para testes E2E com Playwright CLI — setup, execução, test-agents (planner/generator/healer) e autenticação via storageState.",

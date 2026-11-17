@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "qlik-cloud": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp-servers/qlik-cloud/index.js"],
+      "env": {
+        "QLIK_TENANT_URL": "${QLIK_TENANT_URL}",
+        "QLIK_API_KEY": "${QLIK_API_KEY}"
+      }
+    }
+  }
+}

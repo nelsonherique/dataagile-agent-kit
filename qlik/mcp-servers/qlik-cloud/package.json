@@ -1,0 +1,16 @@
+{
+  "name": "qlik-cloud-mcp",
+  "version": "1.0.0",
+  "description": "MCP server local para consultar a API REST do Qlik Sense Cloud (tenant DataAgile/PrioriSA)",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.0"
+  }
+}

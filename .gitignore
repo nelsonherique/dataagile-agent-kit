@@ -54,6 +54,7 @@ docs/plans/material_treinamento/*.pdf
 !/playwright/
 !/fluig/
 !/po-ui/
+!/qlik/
 
 # Repo metadata
 !/.claude-plugin/
